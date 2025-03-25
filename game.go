@@ -9,8 +9,8 @@ import (
 func fillArray(arr [][]rune) {
 	for i := range arr {
 		for j := range arr[i] {
-			if rand.Intn(100) < 5 {
-				arr[i][j] = 'x'
+			if rand.Intn(100) < 3 {
+				arr[i][j] = '.'
 			} else {
 				arr[i][j] = ' '
 			}
@@ -61,6 +61,11 @@ func main() {
             s.SetContent(x, y, ch, nil, defStyle)
         }
     }
+    
+    playerX := width / 2
+    playerY := height / 2
+    s.SetContent(playerX, playerY, 'X', nil, defStyle)
+
 
 	for {
 		// Update screen
