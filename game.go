@@ -6,22 +6,129 @@ import (
 	"math/rand"
 )
 
-func fillArray(arr [][]rune) {
-	for i := range arr {
-		for j := range arr[i] {
+func main() {
+    defStyle, s := createScreen()
+    quit := func() {
+        maybePanic := recover()
+		s.Fini()
+		if maybePanic != nil {
+            panic(maybePanic)
+		}
+	}
+	defer quit()
+
+	width, height := s.Size()
+    var game Game
+	createGame(&game, width, height)
+	drawGame(&game, s, defStyle)
+
+	for {
+		// Update screen
+		s.Show()
+
+		// Poll event
+		ev := s.PollEvent()
+
+		switch ev := ev.(type) {
+		case *tcell.EventKey:
+			if ev.Key() == tcell.KeyEscape || ev.Key() == tcell.KeyCtrlC {
+				return
+			} else if ev.Key() == tcell.KeyUp || ev.Key() == tcell.KeyDown || ev.Key() == tcell.KeyLeft || ev.Key() == tcell.KeyRight {
+				s.SetContent(game.Player.X, game.Player.Y, ' ', nil, defStyle)
+				move(ev.Key(), &game)
+				s.SetContent(game.Player.X, game.Player.Y, 'X', nil, defStyle)
+            } else if ev.Key() == tcell.KeyCtrlR {
+                // Handle Ctrl+R
+                createGame(&game, width, height)
+                drawGame(&game, s, defStyle)
+            }
+		}
+	}
+}
+
+func drawGame(game *Game, s tcell.Screen, defStyle tcell.Style) {
+	for y, row := range game.World {
+		for x, ch := range row {
+			s.SetContent(x, y, ch, nil, defStyle)
+		}
+	}
+
+    for _, food := range game.Food {
+        s.SetContent(food.X, food.Y, 'o', nil, defStyle)
+        if game.World[food.Y][food.X] == '.' {
+            game.World[food.Y][food.X] = ' '
+        }
+    }
+	s.SetContent(game.Player.X, game.Player.Y, 'X', nil, defStyle)
+}
+
+
+
+type Food struct {
+    X int
+    Y int
+    Duration int
+}
+
+type Player struct {
+    X int
+    Y int
+    Score int
+}
+
+type Game struct {
+    World [][]rune
+    Player Player
+    Food []Food
+    Width int
+    Height int
+}
+func createGame(game *Game, width, height int) {
+
+    player := Player{
+        X: rand.Intn(width),
+        Y: rand.Intn(height),
+        Score: 0,
+    }
+
+	world := make([][]rune, height)
+	for i := range world {
+		world[i] = make([]rune, width)
+	}
+
+    foods := []Food{}
+    for i := 0; i < 10; i++ { 
+        food := Food{
+            X: rand.Intn(width),
+            Y: rand.Intn(height),
+            Duration: 10,
+        }
+        foods = append(foods, food)
+    }   
+
+	for i := range world {
+		for j := range world[i] {
+            if i == player.Y && j == player.X {
+                continue
+            }
 			if rand.Intn(100) < 3 {
-				arr[i][j] = '.'
+				world[i][j] = '.'
 			} else {
-				arr[i][j] = ' '
+				world[i][j] = ' '
 			}
 		}
 	}
 
+    game.World = world
+    game.Player = player
+    game.Food = foods
+    game.Width = width
+    game.Height = height
+
 }
 
-func main() {
+func createScreen() (tcell.Style, tcell.Screen) {
 	defStyle := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
-	// boxStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack)
 
 	// Initialize screen
 	s, err := tcell.NewScreen()
@@ -36,77 +143,29 @@ func main() {
 	s.EnablePaste()
 	s.Clear()
 
-	quit := func() {
-		// You have to catch panics in a defer, clean up, and
-		// re-raise them - otherwise your application can
-		// die without leaving any diagnostic trace.
-		maybePanic := recover()
-		s.Fini()
-		if maybePanic != nil {
-			panic(maybePanic)
-		}
-	}
-	defer quit()
-
-	width, height := s.Size()
-
-	arr := make([][]rune, height)
-	for i := range arr {
-		arr[i] = make([]rune, width)
-	}
-
-	fillArray(arr)
-	for y, row := range arr {
-		for x, ch := range row {
-			s.SetContent(x, y, ch, nil, defStyle)
-		}
-	}
-
-	playerX := width / 2
-	playerY := height / 2
-	s.SetContent(playerX, playerY, 'X', nil, defStyle)
-
-	for {
-		// Update screen
-		s.Show()
-
-		// Poll event
-		ev := s.PollEvent()
-
-		switch ev := ev.(type) {
-		case *tcell.EventKey:
-			if ev.Key() == tcell.KeyEscape || ev.Key() == tcell.KeyCtrlC {
-				return
-			} else if ev.Key() == tcell.KeyUp || ev.Key() == tcell.KeyDown || ev.Key() == tcell.KeyLeft || ev.Key() == tcell.KeyRight {
-				s.SetContent(playerX, playerY, ' ', nil, defStyle)
-				move(ev.Key(), &playerX, &playerY, width, height)
-				s.SetContent(playerX, playerY, 'X', nil, defStyle)
-			}
-
-		}
-	}
+	return defStyle, s
 }
 
-func move(key tcell.Key, playerX *int, playerY *int, width, height int) {
-    switch key { 
+func move(key tcell.Key, game *Game) {
+
+    switch key {
     case tcell.KeyUp:
-        if *playerY > 0 {
-            *playerY--
+        if game.Player.Y > 0 && game.World[game.Player.Y-1][game.Player.X] != '.' {
+            game.Player.Y--
         }
     case tcell.KeyDown:
-        if *playerY < height-1 {
-            *playerY++
+        if game.Player.Y < game.Height-1 && game.World[game.Player.Y+1][game.Player.X] != '.' {
+            game.Player.Y++
         }
     case tcell.KeyLeft:
-        if *playerX > 0 {
-            *playerX--
+        if game.Player.X > 0 && game.World[game.Player.Y][game.Player.X-1] != '.' {
+            game.Player.X--
         }
     case tcell.KeyRight:
-        if *playerX < width-1 {
-            *playerX++
+        if game.Player.X < game.Width-1 && game.World[game.Player.Y][game.Player.X+1] != '.' {
+            game.Player.X++
         }
     default:
         // Do nothing for other keys
-        
     }
 }
