@@ -56,16 +56,15 @@ func main() {
 	}
 
 	fillArray(arr)
-    for y, row := range arr {
-        for x, ch := range row {
-            s.SetContent(x, y, ch, nil, defStyle)
-        }
-    }
-    
-    playerX := width / 2
-    playerY := height / 2
-    s.SetContent(playerX, playerY, 'X', nil, defStyle)
+	for y, row := range arr {
+		for x, ch := range row {
+			s.SetContent(x, y, ch, nil, defStyle)
+		}
+	}
 
+	playerX := width / 2
+	playerY := height / 2
+	s.SetContent(playerX, playerY, 'X', nil, defStyle)
 
 	for {
 		// Update screen
@@ -78,12 +77,36 @@ func main() {
 		case *tcell.EventKey:
 			if ev.Key() == tcell.KeyEscape || ev.Key() == tcell.KeyCtrlC {
 				return
-			} else if ev.Key() == tcell.KeyCtrlL {
-				s.Sync()
-			} else if ev.Rune() == 'C' || ev.Rune() == 'c' {
-				s.Clear()
-				s.SetCursorStyle(tcell.CursorStyleSteadyUnderline)
+			} else if ev.Key() == tcell.KeyUp || ev.Key() == tcell.KeyDown || ev.Key() == tcell.KeyLeft || ev.Key() == tcell.KeyRight {
+				s.SetContent(playerX, playerY, ' ', nil, defStyle)
+				move(ev.Key(), &playerX, &playerY, width, height)
+				s.SetContent(playerX, playerY, 'X', nil, defStyle)
 			}
+
 		}
 	}
+}
+
+func move(key tcell.Key, playerX *int, playerY *int, width, height int) {
+    switch key { 
+    case tcell.KeyUp:
+        if *playerY > 0 {
+            *playerY--
+        }
+    case tcell.KeyDown:
+        if *playerY < height-1 {
+            *playerY++
+        }
+    case tcell.KeyLeft:
+        if *playerX > 0 {
+            *playerX--
+        }
+    case tcell.KeyRight:
+        if *playerX < width-1 {
+            *playerX++
+        }
+    default:
+        // Do nothing for other keys
+        
+    }
 }
