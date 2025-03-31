@@ -9,9 +9,10 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-// InputEvent represents a game input event
+// InputEvent represents a keyboard input event
 type InputEvent struct {
-	Key tcell.Key
+	Key  tcell.Key
+	Rune rune
 }
 
 func main() {
@@ -41,6 +42,20 @@ func main() {
 		// Process input events (non-blocking)
 		select {
 		case ev := <-inputChan:
+			if game.GameOver {
+				switch ev.Key {
+				case tcell.KeyRune:
+					if ev.Rune == 'r' || ev.Rune == 'R' {
+						createGame(&game, width, height-1)
+						drawGame(&game, s, defStyle)
+					} else if ev.Rune == 'c' || ev.Rune == 'C' {
+						return
+					}
+				case tcell.KeyEscape, tcell.KeyCtrlC:
+					return
+				}
+				continue
+			}
 			switch ev.Key {
 			case tcell.KeyEscape, tcell.KeyCtrlC:
 				return
@@ -48,17 +63,17 @@ func main() {
 				s.SetContent(game.Player.X, game.Player.Y+1, ' ', nil, defStyle)
 				move(ev.Key, &game)
 				s.SetContent(game.Player.X, game.Player.Y+1, 'X', nil, defStyle)
-			case tcell.KeyCtrlR:
-				createGame(&game, width, height-1)
-				drawGame(&game, s, defStyle)
 			}
 		default:
 			// No input event, continue with game loop
 		}
 
-		// Update game state
-		checkFood(&game)
-		moveEnemies(&game)
+		if !game.GameOver {
+			// Update game state
+			checkFood(&game)
+			moveEnemies(&game)
+			checkCollisions(&game)
+		}
 
 		// Render
 		drawGame(&game, s, defStyle)
@@ -69,17 +84,13 @@ func main() {
 	}
 }
 
-// handleInput processes input events in a separate goroutine
-func handleInput(s tcell.Screen, inputChan chan<- InputEvent) {
+// handleInput processes input events and sends them to the channel
+func handleInput(s tcell.Screen, ch chan<- InputEvent) {
 	for {
 		ev := s.PollEvent()
-		if ev == nil {
-			continue
-		}
-
 		switch ev := ev.(type) {
 		case *tcell.EventKey:
-			inputChan <- InputEvent{Key: ev.Key()}
+			ch <- InputEvent{Key: ev.Key(), Rune: ev.Rune()}
 		}
 	}
 }
@@ -92,6 +103,31 @@ func drawGame(game *Game, s tcell.Screen, defStyle tcell.Style) {
 	scoreText := []rune(fmt.Sprintf("Score: %d", game.Player.Score))
 	for i, ch := range scoreText {
 		s.SetContent(i, 0, ch, nil, defStyle)
+	}
+
+	if game.GameOver {
+		// ASCII art for GAME OVER
+		gameOverArt := []string{
+			"+---------------------------+",
+			"|                           |",
+			"|        GAME OVER          |",
+			"|                           |",
+			"| Press 'R' to Restart      |",
+			"| Press 'C' or ESC to Exit  |",
+			"|                           |",
+			"+---------------------------+",
+		}
+
+		// Calculate center position
+		startY := (game.Height - len(gameOverArt)) / 2
+		for i, line := range gameOverArt {
+			startX := (game.Width - len(line)) / 2
+			for j, ch := range line {
+				s.SetContent(startX+j, startY+i, rune(ch), nil, defStyle)
+			}
+		}
+
+		return
 	}
 
 	// Draw world with offset to leave room for score
@@ -129,12 +165,13 @@ type Player struct {
 }
 
 type Game struct {
-	World   [][]rune
-	Player  Player
-	Food    []Food
-	Enemies []Enemy
-	Width   int
-	Height  int
+	World    [][]rune
+	Player   Player
+	Food     []Food
+	Enemies  []Enemy
+	Width    int
+	Height   int
+	GameOver bool
 }
 
 type Enemy struct {
@@ -197,6 +234,7 @@ func createGame(game *Game, width, height int) {
 	game.Enemies = enemies
 	game.Width = width
 	game.Height = height
+	game.GameOver = false
 }
 
 func createScreen() (tcell.Style, tcell.Screen) {
@@ -271,8 +309,29 @@ func moveEnemies(game *Game) {
 
 		enemy.MoveCounter = 0
 
-		// Randomly change direction occasionally
-		if rand.Intn(10) < 2 {
+		// Determine if enemy will follow player (80% chance) or move randomly (20% chance)
+		if rand.Intn(10) < 8 {
+			// Follow player: determine best direction to move toward player
+			// Calculate distance from enemy to player
+			dx := game.Player.X - enemy.X
+			dy := game.Player.Y - enemy.Y
+
+			// Choose direction based on which axis has the greater distance
+			if abs(dx) > abs(dy) {
+				if dx > 0 {
+					enemy.Direction = 1 // right
+				} else {
+					enemy.Direction = 3 // left
+				}
+			} else {
+				if dy > 0 {
+					enemy.Direction = 2 // down
+				} else {
+					enemy.Direction = 0 // up
+				}
+			}
+		} else {
+			// Randomly change direction occasionally
 			enemy.Direction = rand.Intn(4)
 		}
 
@@ -303,6 +362,23 @@ func moveEnemies(game *Game) {
 			enemy.Direction = rand.Intn(4)
 		} else {
 			enemy.X, enemy.Y = newX, newY
+		}
+	}
+}
+
+// Helper function to calculate absolute value of an integer
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+func checkCollisions(game *Game) {
+	for _, enemy := range game.Enemies {
+		if enemy.X == game.Player.X && enemy.Y == game.Player.Y {
+			game.GameOver = true
+			return
 		}
 	}
 }
