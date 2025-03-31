@@ -4,9 +4,15 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 )
+
+// InputEvent represents a game input event
+type InputEvent struct {
+	Key tcell.Key
+}
 
 func main() {
 	defStyle, s := createScreen()
@@ -24,30 +30,57 @@ func main() {
 	createGame(&game, width, height-1) // Reserve one line for score
 	drawGame(&game, s, defStyle)
 
+	// Create channel for input events
+	inputChan := make(chan InputEvent, 10)
+
+	// Start input handling goroutine
+	go handleInput(s, inputChan)
+
+	// Game loop
 	for {
-		// Update screen
+		// Process input events (non-blocking)
+		select {
+		case ev := <-inputChan:
+			switch ev.Key {
+			case tcell.KeyEscape, tcell.KeyCtrlC:
+				return
+			case tcell.KeyUp, tcell.KeyDown, tcell.KeyLeft, tcell.KeyRight:
+				s.SetContent(game.Player.X, game.Player.Y+1, ' ', nil, defStyle)
+				move(ev.Key, &game)
+				s.SetContent(game.Player.X, game.Player.Y+1, 'X', nil, defStyle)
+			case tcell.KeyCtrlR:
+				createGame(&game, width, height-1)
+				drawGame(&game, s, defStyle)
+			}
+		default:
+			// No input event, continue with game loop
+		}
+
+		// Update game state
+		checkFood(&game)
+		moveEnemies(&game)
+
+		// Render
+		drawGame(&game, s, defStyle)
 		s.Show()
 
-		// Poll event
+		// Small sleep to prevent CPU hogging
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// handleInput processes input events in a separate goroutine
+func handleInput(s tcell.Screen, inputChan chan<- InputEvent) {
+	for {
 		ev := s.PollEvent()
+		if ev == nil {
+			continue
+		}
 
 		switch ev := ev.(type) {
 		case *tcell.EventKey:
-			if ev.Key() == tcell.KeyEscape || ev.Key() == tcell.KeyCtrlC {
-				return
-			} else if ev.Key() == tcell.KeyUp || ev.Key() == tcell.KeyDown || ev.Key() == tcell.KeyLeft || ev.Key() == tcell.KeyRight {
-				s.SetContent(game.Player.X, game.Player.Y+1, ' ', nil, defStyle)
-				move(ev.Key(), &game)
-				s.SetContent(game.Player.X, game.Player.Y+1, 'X', nil, defStyle)
-			} else if ev.Key() == tcell.KeyCtrlR {
-				// Handle Ctrl+R
-				createGame(&game, width, height-1) // Reserve one line for score
-				drawGame(&game, s, defStyle)
-			}
+			inputChan <- InputEvent{Key: ev.Key()}
 		}
-
-		checkFood(&game)
-		drawGame(&game, s, defStyle) // Redraw after updating score
 	}
 }
 
@@ -74,6 +107,12 @@ func drawGame(game *Game, s tcell.Screen, defStyle tcell.Style) {
 			game.World[food.Y][food.X] = ' '
 		}
 	}
+
+	// Draw enemies
+	for _, enemy := range game.Enemies {
+		s.SetContent(enemy.X, enemy.Y+1, 'E', nil, defStyle)
+	}
+
 	s.SetContent(game.Player.X, game.Player.Y+1, 'X', nil, defStyle)
 }
 
@@ -90,15 +129,22 @@ type Player struct {
 }
 
 type Game struct {
-	World  [][]rune
-	Player Player
-	Food   []Food
-	Width  int
-	Height int
+	World   [][]rune
+	Player  Player
+	Food    []Food
+	Enemies []Enemy
+	Width   int
+	Height  int
+}
+
+type Enemy struct {
+	X           int
+	Y           int
+	Direction   int // 0: up, 1: right, 2: down, 3: left
+	MoveCounter int // For controlling enemy movement speed
 }
 
 func createGame(game *Game, width, height int) {
-
 	player := Player{
 		X:     rand.Intn(width),
 		Y:     rand.Intn(height),
@@ -120,6 +166,18 @@ func createGame(game *Game, width, height int) {
 		foods = append(foods, food)
 	}
 
+	// Create enemies
+	enemies := []Enemy{}
+	for i := 0; i < 3; i++ {
+		enemy := Enemy{
+			X:           rand.Intn(width),
+			Y:           rand.Intn(height),
+			Direction:   rand.Intn(4), // Random initial direction
+			MoveCounter: 0,
+		}
+		enemies = append(enemies, enemy)
+	}
+
 	for i := range world {
 		for j := range world[i] {
 			if i == player.Y && j == player.X {
@@ -136,9 +194,9 @@ func createGame(game *Game, width, height int) {
 	game.World = world
 	game.Player = player
 	game.Food = foods
+	game.Enemies = enemies
 	game.Width = width
 	game.Height = height
-
 }
 
 func createScreen() (tcell.Style, tcell.Screen) {
@@ -199,4 +257,52 @@ func checkFood(game *Game) {
 
 	// Update the food list to only include remaining food
 	game.Food = remainingFood
+}
+
+func moveEnemies(game *Game) {
+	for i := range game.Enemies {
+		enemy := &game.Enemies[i]
+
+		// Only move every few frames to slow down enemies
+		enemy.MoveCounter++
+		if enemy.MoveCounter < 3 {
+			continue
+		}
+
+		enemy.MoveCounter = 0
+
+		// Randomly change direction occasionally
+		if rand.Intn(10) < 2 {
+			enemy.Direction = rand.Intn(4)
+		}
+
+		// Try to move in the current direction
+		newX, newY := enemy.X, enemy.Y
+
+		switch enemy.Direction {
+		case 0: // up
+			if enemy.Y > 0 && game.World[enemy.Y-1][enemy.X] != '.' {
+				newY--
+			}
+		case 1: // right
+			if enemy.X < game.Width-1 && game.World[enemy.Y][enemy.X+1] != '.' {
+				newX++
+			}
+		case 2: // down
+			if enemy.Y < game.Height-1 && game.World[enemy.Y+1][enemy.X] != '.' {
+				newY++
+			}
+		case 3: // left
+			if enemy.X > 0 && game.World[enemy.Y][enemy.X-1] != '.' {
+				newX--
+			}
+		}
+
+		// If we couldn't move in that direction, try a different one
+		if newX == enemy.X && newY == enemy.Y {
+			enemy.Direction = rand.Intn(4)
+		} else {
+			enemy.X, enemy.Y = newX, newY
+		}
+	}
 }
