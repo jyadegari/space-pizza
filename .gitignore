@@ -1,0 +1,43 @@
+# VS Code files
+.vscode/
+*.code-workspace
+.history/
+
+# Binary files
+space-pizza
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go specific
+*.o
+*.a
+*.test
+*.out
+*.prof
+/vendor/
+/Godeps/
+
+# Dependency directories
+/bin/
+/pkg/
+
+# Log files
+*.log
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux specific
+*~
+.directory
+.Trash-* 
